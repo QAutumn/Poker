@@ -1,0 +1,12 @@
+{
+  "name": "quantart-poker",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.8.1",
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter @poker/shared --filter poker-api --filter poker-web dev",
+    "build": "pnpm --filter @poker/shared build && pnpm --filter poker-api build && pnpm --filter poker-web build",
+    "lint": "pnpm --filter poker-web lint",
+    "check": "pnpm build"
+  }
+}
