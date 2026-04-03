@@ -1,8 +1,8 @@
 import cors from "@fastify/cors";
 import Fastify from "fastify";
 
-import { config } from "./core/config";
-import { registerSessionRoutes } from "./routes/session";
+import { config } from "./core/config.js";
+import { registerSessionRoutes } from "./routes/session.js";
 
 const app = Fastify({ logger: true });
 

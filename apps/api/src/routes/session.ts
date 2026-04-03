@@ -1,13 +1,14 @@
-import { advanceHandState, createHandState } from "@poker/shared";
+import { advanceHandState, createHandState, createNextHandState } from "@poker/shared";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 
-import { loadRecentHistory, loadSession, saveSession } from "../db/store";
-import { getCoachingAdvice } from "../services/coach";
+import { loadLatestSession, loadRecentHistory, loadSession, saveSession } from "../db/store.js";
+import { getCoachingAdvice } from "../services/coach.js";
 
 const startSchema = z.object({
   mode: z.enum(["practice", "tournament"]),
   heroName: z.string().optional(),
+  botCount: z.number().int().min(1).max(5).optional(),
 });
 
 const actionSchema = z.object({
@@ -22,10 +23,30 @@ const equitySchema = z.object({
   board: z.array(z.string()).max(5),
 });
 
+const normalizeResult = <T extends { description: string; reason?: "fold" | "showdown" } | null>(result: T) => {
+  if (!result) return result;
+  if (result.reason && !result.description.includes("通过弃牌赢下底池")) return result;
+  const foldMatch = result.description.match(/^(.*) 通过弃牌赢下底池$/);
+  return {
+    ...result,
+    reason: result.reason ?? (result.description.includes("弃牌") ? "fold" : "showdown"),
+    ...(foldMatch ? { description: `其余玩家弃牌，${foldMatch[1]} 赢下底池` } : {}),
+  };
+};
+
 export const registerSessionRoutes = async (app: FastifyInstance) => {
+  app.get("/session/current", async (request) => {
+    const query = z.object({ mode: z.enum(["practice", "tournament"]).optional() }).parse(request.query);
+    return loadLatestSession(query.mode) ?? null;
+  });
+
   app.post("/session/start", async (request) => {
     const input = startSchema.parse(request.body);
-    const state = createHandState(input);
+    const state = createHandState({
+      mode: input.mode,
+      ...(input.heroName ? { heroName: input.heroName } : {}),
+      ...(input.botCount !== undefined ? { botCount: input.botCount } : {}),
+    });
     saveSession(state);
     return state;
   });
@@ -37,10 +58,28 @@ export const registerSessionRoutes = async (app: FastifyInstance) => {
       return reply.code(404).send({ message: "session not found" });
     }
 
-    const nextState = advanceHandState(session, {
-      type: input.type,
-      amount: input.amount,
-    });
+    try {
+      const nextState = advanceHandState(
+        session,
+        input.amount === undefined ? { type: input.type } : { type: input.type, amount: input.amount },
+      );
+      saveSession(nextState);
+      return nextState;
+    } catch (error) {
+      return reply.code(400).send({
+        message: error instanceof Error ? error.message : "invalid action",
+      });
+    }
+  });
+
+  app.post("/session/next-hand", async (request, reply) => {
+    const body = z.object({ sessionId: z.string() }).parse(request.body);
+    const session = loadSession(body.sessionId);
+    if (!session) {
+      return reply.code(404).send({ message: "session not found" });
+    }
+
+    const nextState = createNextHandState(session);
     saveSession(nextState);
     return nextState;
   });
@@ -56,13 +95,13 @@ export const registerSessionRoutes = async (app: FastifyInstance) => {
   });
 
   app.get("/history", async () => {
-    return loadRecentHistory().map((row) => ({
+    return loadRecentHistory().map((row: ReturnType<typeof loadRecentHistory>[number]) => ({
       id: row.id,
       sessionId: row.session_id,
       handNumber: row.hand_number,
       mode: row.mode,
       board: JSON.parse(row.board),
-      result: row.result_json ? JSON.parse(row.result_json) : null,
+      result: row.result_json ? normalizeResult(JSON.parse(row.result_json)) : null,
       actionLog: JSON.parse(row.action_log_json),
       createdAt: row.created_at,
     }));

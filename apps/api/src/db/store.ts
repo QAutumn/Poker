@@ -1,9 +1,9 @@
-import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import type { HandState } from "@poker/shared";
 
-import { config } from "../core/config";
+import { config } from "../core/config.js";
 
 export interface AdviceRecord {
   cacheKey: string;
@@ -13,8 +13,8 @@ export interface AdviceRecord {
 const dataDir = path.resolve(process.cwd(), config.dataDir);
 fs.mkdirSync(dataDir, { recursive: true });
 
-const database = new Database(path.join(dataDir, "poker.db"));
-database.pragma("journal_mode = WAL");
+const database = new DatabaseSync(path.join(dataDir, "poker.db"));
+database.exec("PRAGMA journal_mode = WAL");
 
 database.exec(`
   CREATE TABLE IF NOT EXISTS sessions (
@@ -55,6 +55,22 @@ const historyStmt = database.prepare(`
   VALUES (@sessionId, @handNumber, @mode, @board, @resultJson, @actionLogJson)
 `);
 
+const normalizeResult = (result: HandState["result"] | undefined): HandState["result"] | undefined => {
+  if (!result) return undefined;
+  if (result.reason && !result.description.includes("通过弃牌赢下底池")) return result;
+  const foldMatch = result.description.match(/^(.*) 通过弃牌赢下底池$/);
+  return {
+    ...result,
+    reason: result.reason ?? (result.description.includes("弃牌") ? "fold" : "showdown"),
+    ...(foldMatch ? { description: `其余玩家弃牌，${foldMatch[1]} 赢下底池` } : {}),
+  };
+};
+
+const hydrateHandState = (state: HandState): HandState => {
+  const result = normalizeResult(state.result);
+  return result ? { ...state, result } : state;
+};
+
 export const saveSession = (state: HandState) => {
   upsertSessionStmt.run({
     sessionId: state.sessionId,
@@ -79,7 +95,21 @@ export const loadSession = (sessionId: string): HandState | undefined => {
     .prepare("SELECT state_json FROM sessions WHERE session_id = ?")
     .get(sessionId) as { state_json?: string } | undefined;
 
-  return row?.state_json ? (JSON.parse(row.state_json) as HandState) : undefined;
+  return row?.state_json ? hydrateHandState(JSON.parse(row.state_json) as HandState) : undefined;
+};
+
+export const loadLatestSession = (mode?: HandState["mode"]): HandState | undefined => {
+  const row = (
+    mode
+      ? database
+          .prepare("SELECT state_json FROM sessions WHERE mode = ? ORDER BY updated_at DESC LIMIT 1")
+          .get(mode)
+      : database
+          .prepare("SELECT state_json FROM sessions ORDER BY updated_at DESC LIMIT 1")
+          .get()
+  ) as { state_json?: string } | undefined;
+
+  return row?.state_json ? hydrateHandState(JSON.parse(row.state_json) as HandState) : undefined;
 };
 
 export const loadRecentHistory = () => {

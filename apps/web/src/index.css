@@ -1,10 +1,7 @@
 :root {
-  color: #f6f0d5;
-  background:
-    radial-gradient(circle at top, rgba(214, 175, 94, 0.14), transparent 30%),
-    radial-gradient(circle at 20% 20%, rgba(21, 90, 62, 0.2), transparent 22%),
-    linear-gradient(180deg, #150f09, #080908 65%);
-  font-family: "Avenir Next", "PingFang SC", "Helvetica Neue", sans-serif;
+  color: #f7f2df;
+  background: #07100d;
+  font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color-scheme: dark;
@@ -26,9 +23,23 @@ body,
 
 body {
   margin: 0;
+  background:
+    radial-gradient(circle at top, rgba(17, 120, 86, 0.14), transparent 24%),
+    linear-gradient(180deg, #050907, #07100d);
 }
 
 button,
 input {
   font: inherit;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(219, 180, 111, 0.32);
+  color: #fff7e5;
 }

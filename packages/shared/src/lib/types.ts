@@ -20,6 +20,7 @@ export type CardCode = `${Rank}${Suit}`;
 export type Street = "preflop" | "flop" | "turn" | "river" | "showdown";
 
 export type SessionMode = "practice" | "tournament";
+export type BotStrategyMode = "hu-gto" | "multiway-heuristic";
 
 export type ActionType =
   | "fold"
@@ -77,10 +78,12 @@ export interface AllowedAction {
 }
 
 export interface HandResult {
+  reason: "fold" | "showdown";
   winnerIds: string[];
   description: string;
   board: CardCode[];
   pot: number;
+  foldedByIds?: string[];
 }
 
 export interface EquityBreakdown {
@@ -94,6 +97,7 @@ export interface HandState {
   sessionId: string;
   handNumber: number;
   mode: SessionMode;
+  botStrategyMode: BotStrategyMode;
   street: Street;
   heroId: string;
   buttonIndex: number;
@@ -115,9 +119,11 @@ export interface HandState {
 export interface SessionOptions {
   mode: SessionMode;
   heroName?: string;
+  botCount?: number;
 }
 
 export interface PlayerDecision {
   type: ActionType;
   amount?: number;
+  note?: string;
 }

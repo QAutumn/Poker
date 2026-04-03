@@ -3,12 +3,18 @@ import { createHash } from "node:crypto";
 import { summarizeBoardTexture } from "@poker/shared";
 import type { HandState } from "@poker/shared";
 
-import { config } from "../core/config";
-import { loadAdvice, saveAdvice } from "../db/store";
+import { config } from "../core/config.js";
+import { loadAdvice, saveAdvice } from "../db/store.js";
+
+const chatCompletionUrl = (() => {
+  const base = config.deepseekBaseUrl.replace(/\/$/, "");
+  return /\/chat\/completions$/.test(base) ? base : `${base}/chat/completions`;
+})();
 
 const heuristicAdvice = (state: HandState): string => {
   const hero = state.players.find((player) => player.isHero)!;
-  const villain = state.players.find((player) => !player.isHero)!;
+  const opponents = state.players.filter((player) => !player.isHero && !player.folded);
+  const focus = state.players[state.currentPlayerIndex]?.isHero ? opponents[0] : state.players[state.currentPlayerIndex];
   const toCall = Math.max(0, state.currentBet - hero.bet);
   const rangePressure = state.mode === "tournament" ? "锦标赛筹码压力更高，边缘跟注要收紧。" : "练习模式优先训练下注尺度和持续下注逻辑。";
   const equity = `${Math.round(state.equity.winRate * 100)}%`;
@@ -20,14 +26,22 @@ const heuristicAdvice = (state: HandState): string => {
   return [
     `本地教练结论：你当前手牌胜率约 ${equity}，牌面属于 ${summarizeBoardTexture(state.board)}。`,
     `${rangePressure}`,
-    `${villain.name} 的范围提示是“${state.villainRangeHint}”，不要把所有高张都当成纯价值下注。`,
+    `${focus?.name ?? "当前电脑"} 的牌桌提示是“${state.villainRangeHint}”，不要把所有高张都当成纯价值下注。`,
     `${actionLine}`,
   ].join(" ");
 };
 
 const buildPrompt = (state: HandState): string => {
   const hero = state.players.find((player) => player.isHero)!;
-  const villain = state.players.find((player) => !player.isHero)!;
+  const opponents = state.players
+    .filter((player) => !player.isHero)
+    .map((player) => ({
+      name: player.name,
+      profile: player.profile,
+      stack: player.stack,
+      folded: player.folded,
+      allIn: player.allIn,
+    }));
   const toCall = Math.max(0, state.currentBet - hero.bet);
 
   return [
@@ -40,7 +54,7 @@ const buildPrompt = (state: HandState): string => {
       heroCards: hero.cards,
       board: state.board,
       heroStack: hero.stack,
-      villainStack: villain.stack,
+      opponents,
       pot: state.pot + state.players.reduce((sum, player) => sum + player.bet, 0),
       toCall,
       equity: state.equity,
@@ -80,7 +94,7 @@ export const getCoachingAdvice = async (state: HandState) => {
     return { source: "local" as const, text: fallback };
   }
 
-  const response = await fetch(config.deepseekBaseUrl, {
+  const response = await fetch(chatCompletionUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

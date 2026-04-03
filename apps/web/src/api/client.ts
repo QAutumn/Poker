@@ -16,16 +16,33 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
   });
 
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    let message = `Request failed: ${response.status}`;
+    try {
+      const payload = (await response.json()) as { message?: string };
+      if (payload.message) message = payload.message;
+    } catch {
+      const text = await response.text();
+      if (text) message = text;
+    }
+    throw new Error(message);
   }
 
   return response.json() as Promise<T>;
 };
 
-export const startSession = (mode: SessionMode) =>
+export const startSession = (mode: SessionMode, botCount = 1) =>
   request<HandState>("/session/start", {
     method: "POST",
-    body: JSON.stringify({ mode, heroName: "邱文杰大爷" }),
+    body: JSON.stringify({ mode, heroName: "邱文杰大爷", botCount }),
+  });
+
+export const fetchCurrentSession = (mode: SessionMode) =>
+  request<HandState | null>(`/session/current?mode=${mode}`);
+
+export const startNextHand = (sessionId: string) =>
+  request<HandState>("/session/next-hand", {
+    method: "POST",
+    body: JSON.stringify({ sessionId }),
   });
 
 export const sendAction = (sessionId: string, decision: PlayerDecision) =>
@@ -52,7 +69,7 @@ export const fetchHistory = () =>
       handNumber: number;
       mode: string;
       board: string[];
-      result: { description: string; pot: number } | null;
+      result: HandState["result"] | null;
       actionLog: Array<{ actorName: string; action: string; amount: number; street: string }>;
       createdAt: string;
     }>
